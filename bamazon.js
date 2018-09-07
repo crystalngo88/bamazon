@@ -1,6 +1,21 @@
 var mysql = require("mysql");
 var inquirer = require("inquirer");
 
+function updateStore(stock_remaining, product_name, id) {
+    connection.query("UPDATE storefront SET ?, ? WHERE ?",
+        [{
+            stock_quantity: stock_remaining
+        },
+        {
+            product_name: product_name
+        },
+        {
+            id: id
+        }
+        ],
+    )
+};
+
 var connection = mysql.createConnection({
     host: "localhost",
     port: 3306,
@@ -86,7 +101,6 @@ function sellSomething() {
                     console.log("--------------------------------------")
                     console.log("Your product was added to the storefront successfully!");
                     console.log("--------------------------------------")
-                    updateStore();
                     start();
                 }
             );
@@ -117,15 +131,14 @@ function buySomething() {
                 },
             ])
             .then(function (answer) {
+                console.log('answer:', answer)
                 var id = answer.choice.slice(0, answer.choice.indexOf(')'));
-                var stockAvailable = answer.stock_quantity;
-                var stock_remaining = parseInt(stockAvailable - answer.items_wanted);
-
-                console.log("Checking inventory...\n");
-                connection.query("SELECT * FROM storefront WHERE id= ?", [answer.choice], function (err, res) {
-                    // if (err) {
-                    //     throw err;
-                    // };
+                connection.query("SELECT * FROM storefront WHERE id=" + id, function (err, res) {
+                    console.log('res:', res);
+                    var stockAvailable = res[0].stock_quantity;
+                    console.log('stockAvailable:', stockAvailable);
+                    var stock_remaining = stockAvailable - answer.items_wanted;
+                    console.log('stock_remaining:', stock_remaining);
 
                     if (answer.items_wanted > stockAvailable) {
                         console.log("We don't have enough! Please try again \n");
@@ -145,24 +158,10 @@ function buySomething() {
                         console.log("Updating inventory...\n\n");
 
                         //something after this breaks, doesn't update database
-                        updateStore();
+                        updateStore(stock_remaining, product_name, id);
                         console.log("Inventory updated.")
                     }
                 },
-                    function updateStore() {
-                        connection.query("UPDATE storefront SET ?, ? WHERE ?",
-                            [{
-                                stock_quantity: stock_remaining
-                            },
-                            {
-                                product_name: product_name
-                            },
-                            {
-                                id: answer.id
-                            }
-                            ],
-                        )
-                    },
                     function (err, res) {
                         if (err) throw err;
                         console.log("Inventory updated.");
