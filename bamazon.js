@@ -3,11 +3,8 @@ var inquirer = require("inquirer");
 
 var connection = mysql.createConnection({
     host: "localhost",
-
     port: 3306,
-
     user: "root",
-
     password: "",
     database: "bamazon_db"
 });
@@ -22,7 +19,7 @@ function start() {
     inquirer
         .prompt({
             name: "sellOrBuy",
-            type: "rawlist",
+            type: "list",
             message: "Would you like to [SELL] something or [BUY] something?",
             choices: ["SELL", "BUY"]
         })
@@ -58,7 +55,7 @@ function sellSomething() {
                 message: "How much does it cost?",
                 validate: function (value) {
                     if (isNaN(value) === false) {
-                    return true;
+                        return true;
                     }
                     return false;
                 }
@@ -76,7 +73,6 @@ function sellSomething() {
             },
         ])
         .then(function (answer) {
-            // when finished prompting, insert a new item into the db with that info
             connection.query(
                 "INSERT INTO storefront SET ?",
                 {
@@ -90,6 +86,7 @@ function sellSomething() {
                     console.log("--------------------------------------")
                     console.log("Your product was added to the storefront successfully!");
                     console.log("--------------------------------------")
+                    updateStore();
                     start();
                 }
             );
@@ -97,64 +94,83 @@ function sellSomething() {
 };
 
 function buySomething() {
-    // query the database for all items being auctioned
     connection.query("SELECT * FROM storefront", function (err, results) {
         if (err) throw err;
-        // once you have the items, prompt the user for which they'd like to bid on
+        var choiceArray = [];
+        for (var i = 0; i < results.length; i++) {
+            // var result = results[i];
+            // console.log('result:', result);
+            choiceArray.push(results[i].id + ") " + results[i].product_name + " - " + results[i].stock_quantity + " available");
+        }
         inquirer
             .prompt([
                 {
                     name: "choice",
-                    type: "rawlist",
-                    choices: function () {
-                        var choiceArray = [];
-                        for (var i = 0; i < results.length; i++) {
-                            choiceArray.push(results[i].product_name);
-                        }
-                        return choiceArray;
-                    },
-                    message: "What is the ID for the product would you like to purchase?"
+                    type: "list",
+                    choices: choiceArray,
+                    message: "Which product ID would you like to purchase?\n",
                 },
                 {
-                    name: "stock_quantity",
-                    type: "input",
-                    message: "How many would you like to purchase?"
-                }
+                    name: "items_wanted",
+                    type: "number",
+                    message: "How many would you like to purchase?\n"
+                },
             ])
             .then(function (answer) {
-                // get the information of the chosen item
-                var chosenItem;
-                for (var i = 0; i < results.length; i++) {
-                    if (results[i].product_name === answer.choice) {
-                        chosenItem = results[i];
-                    }
-                }
+                var id = answer.choice.slice(0, answer.choice.indexOf(')'));
+                var stockAvailable = answer.stock_quantity;
+                var stock_remaining = parseInt(stockAvailable - answer.items_wanted);
 
-                // determine if bid was high enough
-                if (chosenItem.stock_quantity > parseInt(answer.stock_quantity)) {
-                    // bid was high enough, so update db, let the user know, and start over
-                    connection.query(
-                        "UPDATE storefront SET ? WHERE ?",
-                        [
-                            {
-                                stock_quantity: //stock quantity-answer.stock_quantity
+                console.log("Checking inventory...\n");
+                connection.query("SELECT * FROM storefront WHERE id= ?", [answer.choice], function (err, res) {
+                    // if (err) {
+                    //     throw err;
+                    // };
+
+                    if (answer.items_wanted > stockAvailable) {
+                        console.log("We don't have enough! Please try again \n");
+                        console.log("--------------------------------------");
+                        start();
+                    } else {
+                        var id = res[0].id;
+                        var product_name = res[0].product_name;
+                        var price = res[0].price;
+                        var sales = price * answer.items_wanted;
+                        console.log("SOLD!")
+                        console.log("Item ID: " + id + "\n" + "Item: " + product_name + "\n" + "Price per item: $" + price + "\n" + answer.items_wanted + " purchased")
+                        console.log("--------------------------------------")
+                        console.log("Total: $", sales + "\n")
+                        console.log("--------------------------------------")
+                        console.log("Stock remaining: ", stock_remaining + "\n")
+                        console.log("Updating inventory...\n\n");
+
+                        //something after this breaks, doesn't update database
+                        updateStore();
+                        console.log("Inventory updated.")
+                    }
+                },
+                    function updateStore() {
+                        connection.query("UPDATE storefront SET ?, ? WHERE ?",
+                            [{
+                                stock_quantity: stock_remaining
                             },
                             {
-                                id: chosenItem.id
+                                product_name: product_name
+                            },
+                            {
+                                id: answer.id
                             }
-                        ],
-                        function (error) {
-                            if (error) throw err;
-                            console.log("Your order has been placed!");
-                            start();
-                        }
-                    );
-                }
-                else {
-                    // bid wasn't high enough, so apologize and start over
-                    console.log("We don't have enough! Please try again");
-                    start();
-                }
-            });
-    });
+                            ],
+                        )
+                    },
+                    function (err, res) {
+                        if (err) throw err;
+                        console.log("Inventory updated.");
+                        console.table(res);
+                        start();
+                        connection.end();
+                    }
+                )
+            })
+    })
 }
